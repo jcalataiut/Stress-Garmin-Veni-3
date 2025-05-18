@@ -1,0 +1,159 @@
+---
+title: "On a General Definition of Depth for Functional Data"
+author: "Jose Calatayud Mateu"
+date: "2025-05-18"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introducción
+
+Este artículo aborda la problemática de definir una función de profundidad estadística adecuada para datos funcionales. Los datos funcionales son aquellos que toman la forma de funciones, como series temporales o curvas de crecimiento. La profundidad estadística es una herramienta clave en estadística multivariada para describir la centralidad de un punto respecto a una distribución. Sin embargo, extender este concepto a datos funcionales (espacios de dimensión infinita) presenta desafíos teóricos y prácticos.
+
+## Propiedades Deseables para Funciones de Profundidad en Datos Multivariados
+
+Antes de adentrarnos en el contexto funcional, el artículo revisa las propiedades clave que debe satisfacer una función de profundidad en datos multivariados (Zuo y Serfling, 2000a):
+
+1.  *Invarianza Afín (ZS-1)*: La profundidad no debe depender del sistema de coordenadas o de las escalas de medición.
+2.  *Maximalidad en el Centro (ZS-2)*: La profundidad alcanza su máximo en el centro de simetría de la nube de datos, si existe.
+3.  \*Monotonicidad Respecto al Punto Más Profundo (ZS-3)\*\*: La profundidad disminuye monótonamente a medida que un punto se aleja del centro.
+4.  *Desvanecimiento en el Infinito (ZS-4)*: La profundidad tiende a cero cuando el punto se aleja infinitamente de la nube de datos.
+
+## Extensión a Datos Funcionales y Propiedades P-1 a P-6
+
+El artículo propone una generalización de estas propiedades al contexto de datos funcionales, listadas como P-1 a P-6 por Nieto-Reyes y Battey (2016). Estas propiedades buscan adaptar los conceptos multivariados al ámbito funcional, considerando la naturaleza infinitesimal de los datos:
+
+1.  **Invarianza de Distancia (P-1)**: La profundidad debe ser invariante bajo transformaciones que preserven las distancias (isometrías).
+2.  **Maximalidad en el Centro (P-2)**: La profundidad alcanza su máximo en el centro de simetría de la distribución, si existe.
+3.  **Monotonicidad Respecto al Punto Más Profundo (P-3)**: La profundidad disminuye estrictamente a medida que nos alejamos del punto más profundo.
+4.  **Semicontinuidad Superior (P-4)**: La profundidad es semicontinua superiormente en cualquier función del espacio funcional.
+5.  **Receptividad a la Anchura del Convex Hull en el Dominio (P-5)**: La profundidad debe ser sensible a la variabilidad en todo el dominio de las funciones.
+6.  **Continuidad en P (P-6)**: La profundidad debe ser continua con respecto a la distribución subyacente.
+
+## Análisis y Adaptaciones de las Propiedades
+
+El artículo realiza un análisis exhaustivo de estas propiedades, encontrando que su extensión directa al contexto funcional presenta problemas:
+
+### P-1: Invarianza de Distancia
+
+La invarianza de distancia (P-1) resulta ser demasiado restrictiva en espacios funcionales. El artículo muestra que no se puede lograr en su totalidad para ninguna de las funciones de profundidad consideradas. Se proponen alternativas como la invarianza afín escalar (P-1S) o la invarianza afín funcional (P-1F), que son más realistas.
+
+```{r, echo=FALSE, fig.align='center'}
+library(DiagrammeR)
+
+grViz("
+digraph {
+  graph [rankdir=TB]
+
+  A [label = 'Simetría Multivariada']
+  B [label = 'Simetría Funcional']
+  C [label = 'Definición mediante dualidad']
+  D [label = 'Centrosimetría (P-2C)']
+  E [label = 'Simetría de Semiespacio (P-2H)']
+
+  A -> B
+  B -> C
+  C -> D
+  C -> E
+}
+", width = 600, height = 300)
+```
+
+### P-3: Monotonicidad Respecto al Punto Más Profundo
+
+La propiedad P-3 resulta ser demasiado restrictiva incluso en dimensión finita. El artículo propone una adaptación más débil (P-3D), que exige simplemente que la profundidad no aumente al alejarse del centro, sin requerir una disminución estricta.
+
+```{r, echo=FALSE, fig.align='center'}
+grViz("
+digraph {
+  graph [rankdir=TB]
+
+  A [label = 'P-3: Disminución Estricta']
+  B [label = 'P-3D: Disminución No Estricta']
+  C [label = 'Alcanzable por algunas\ndepths funcionales']
+
+  A -> B
+  B -> C
+}
+", width = 600, height = 300)
+```
+
+
+### P-5: Receptividad a la Anchura del Convex Hull
+
+La propiedad P-5 se revela problemática, ya que puede entrar en conflicto con otras propiedades como P-1. El artículo demuestra que esta propiedad es vacía en el contexto funcional.
+
+```{r, echo=FALSE,fig.align='center'}
+grViz("
+digraph {
+  graph [rankdir=TB]
+
+  A [label = 'P-5: Receptividad a Convex Hull']
+  B [label = 'En conflicto con P-1']
+  C [label = 'P-5 es vacía en\ncontexto funcional']
+
+  A -> B
+  B -> C
+}
+", width = 600, height = 300)
+```
+
+### P-6: Continuidad en P
+
+La continuidad en la distribución (P-6) es esencial para la inferencia estadística. El artículo propone una versión uniforme (P-6U) que exige continuidad uniforme sobre conjuntos compactos, adaptándose mejor al contexto funcional.
+
+```{r, echo=FALSE, fig.align='center'}
+grViz("
+digraph {
+  graph [rankdir=TB]
+
+  A [label = 'P-6: Continuidad Puntual']
+  B [label = 'P-6U: Continuidad Uniforme']
+  C [label = 'Más adecuada para\nespacios funcionales']
+
+  A -> B
+  B -> C
+}
+", width = 600, height = 300)
+```
+
+
+## Aplicación a Datos Longitudinales
+
+Los datos longitudinales pueden verse como un caso particular de datos funcionales, donde cada sujeto tiene una trayectoria temporal. Las funciones de profundidad discutidas en el artículo pueden aplicarse a datos longitudinales para:
+
+ - Identificar sujetos atípicos
+ - Determinar la centralidad de ciertas trayectorias
+ - Realizar análisis robustos sin depender de supuestos paramétricos
+ - Resumen de Resultados para Funciones de Profundidad
+
+El artículo presenta una tabla (Tabla 1) que resume cuáles propiedades satisfacen las principales funciones de profundidad para datos funcionales. Entre ellas se destacan:
+
+ - h-depth (Dh): Excelente continuidad y robustez, pero carece de unimodalidad.
+ - Random Tukey Depth (DRT): Es inherentemente aleatoria y puede variar ampliamente con diferentes proyecciones.
+ - Band Depth (DJ) y Half-region Depth (DHR): Tenden a degenerar en datasets complejos y presentan dificultades con la robustez.
+ - Modified Band Depth (DMJ): Satisface la mayoría de las propiedades, excepto P-3V.
+ - Spatial Depth (DS) y L$\infty$ Depth (DL$\infty$): Son altamente competitivas y merecen más investigación.
+
+## Conclusión
+
+El artículo concluye que, aparte de DS y DL$\infty$, algunas profundidades integradas (como DMJ) parecen superiores a otros conceptos de profundidad funcional. Sin embargo, la elección adecuada dentro de la familia de profundidades integradas sigue siendo un problema interesante de investigación. La aplicación práctica de estas profundidades a datos longitudinales puede beneficiarse de sus propiedades de robustez y continuidad, siempre que se elija la función de profundidad adecuada para el contexto específico.
+
+Dicho en otras palabras, proporciona un marco teórico para definir funciones de profundidad en datos funcionales, identificando las propiedades deseadas y sus adaptaciones al contexto infinitesimal. Las conclusiones son relevantes para el análisis de datos longitudinales, ya que estas funciones de profundidad permiten identificar patrones centrales y atípicos sin depender de supuestos paramétricos rígidos. La elección de la función de profundidad debe guiarse por las propiedades que mejor se adapten al problema específico, teniendo en cuenta el equilibrio entre continuidad, robustez y capacidad para reflejar la estructura de los datos.
+
+### Notas para la Aplicación a Datos Longitudinales
+
+Cuando apliques estas funciones de profundidad a datos longitudinales:
+
+ 1. Considera la dimensionalidad de tus datos (espacio L2 para datos en serie temporal)
+ 2. Ten en cuenta la continuidad temporal de las observaciones
+ 3. Evalúa si tu problema requiere más énfasis en la robustez (Dh) o en la estructura central (DMJ)
+ 4. Recuerda que la interpretación de la profundidad funcional puede ser más intuitiva que en el caso multivariado
+ 5. Utiliza visualizaciones adecuadas para datos funcionales (como graficos de líneas con sombreado para la región de mayor profundidad)
+ 
+ 
