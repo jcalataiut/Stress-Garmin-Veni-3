@@ -1,0 +1,83 @@
+---
+title: "Análisis del impacto del estrés en variables fisiológicas medidas por dispositivos Garmin Venu 3"
+author: ""
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+# Contexto
+
+Disponéis de datos longitudinales recogidos mediante dispositivos Garmin Venu 3 para 9 individuos, entre el 1 de octubre de 2024 y el 9 de abril de 2025. Estas mediciones diarias incluyen múltiples indicadores fisiológicos relacionados con la actividad física, el estrés, el sueño y la salud general.
+
+**Nota importante:** al comienzo del estudio, no todos los individuos usaban el reloj de forma regular. Por tanto, debéis considerar como periodo de análisis principal aquel en el que todos los participantes comenzaron a registrar datos de forma consistente.
+
+Durante este seguimiento, hubo una fase crítica: **del 2 al 15 de febrero de 2025**, los participantes estuvieron expuestos a un entorno de estrés controlado, que actúa como una intervención experimental.
+
+# Objetivo científico
+
+Analizar cómo afecta la exposición al estrés (del 2 al 15 de febrero) a diferentes variables fisiológicas, utilizando como referencia los periodos de control (antes y después).
+
+# Variables a estudiar
+
+Se deben analizar las variables de la 29 a la 56, que comprenden medidas como:
+
+- Indicadores de estrés (niveles, duración, intensidad)  
+- Body Battery  
+- Sueño (duración y fases)  
+- Frecuencia cardíaca y variabilidad de la FC (HRV)  
+
+# Tareas a realizar
+
+## 0. Cargar los datos
+
+
+
+## 1. Exploración inicial
+
+- Seleccionar el periodo en el que todos los individuos tienen registros completos o casi completos.  
+- Realizar un control de calidad: valores perdidos, atípicos, inconsistentes.  
+
+## 2. Propuesta metodológica
+
+Podéis aplicar uno o varios enfoques, según vuestra estrategia y objetivos:
+
+### a) Análisis funcional de datos (FDA)
+
+- Representar la evolución de cada variable como una curva por individuo.  
+- Comparar funciones antes, durante y después del estrés.  
+
+### b) PCA funcional
+
+- Analizar componentes principales de las funciones.  
+- Observar si los días de estrés se separan en el espacio de componentes.  
+
+### c) Profundidad funcional
+
+- Evaluar cómo de “extremos” o “centrales” son los días de estrés en relación al resto.  
+- Usar boxplots funcionales o gráficos de profundidad.  
+
+### d) Análisis univariado
+
+- Comparar la media o mediana de cada variable entre fases (antes, durante, después).  
+- Realizar pruebas estadísticas apropiadas.  
+
+### e) Análisis multivariado
+
+- Analizar grupos de variables conjuntamente.  
+- Aplicar clustering o técnicas multivariantes funcionales.  
+
+# Entregable
+
+1. Una presentación de 15 minutos, donde debéis:  
+   - Exponer la pregunta científica y metodología usada.  
+   - Mostrar resultados: curvas, gráficos, análisis estadísticos.  
+   - Concluir con la interpretación del impacto del estrés.  
+   - Aportar una discusión crítica sobre los hallazgos y la metodología.  
+
+2. Un Rmarkdown (pdf) con vuestros resultados, gráficos, comentarios y que se vea el código de R (se puede intercalar).  
+
+# Consejos
+
+- No es obligatorio usar todas las técnicas, pero sí justificar la elección.  
+- Podéis explorar el uso de modelos mixtos funcionales si queréis avanzar más.  
+- Aprovechad la riqueza temporal de los datos: no son solo puntos, son trayectorias. Esto puntuará más.  
