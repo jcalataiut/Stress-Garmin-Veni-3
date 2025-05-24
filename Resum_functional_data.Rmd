@@ -1,0 +1,508 @@
+---
+title: "Resum Funcional data Analisis"
+author: "Aleix Barnils"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
+```
+
+# Introducción al Análisis de Datos Funcionales (FDA)
+
+El Análisis de Datos Funcionales (FDA) es un marco estadístico diseñado para el análisis de observaciones que son funciones, como curvas, imágenes o funciones en dominios de dimensiones superiores. A diferencia del análisis de datos escalares o multivariados, donde cada observación es un número o un vector de números, en FDA cada observación es una función completa.
+
+Los objetivos del FDA, como los análisis descriptivos, clasificación y regresión, son generalmente los mismos que en el análisis estadístico tradicional. Sin embargo, el FDA presenta desafíos adicionales debido a la alta e infinita dimensionalidad de las observaciones y parámetros.
+
+Este documento proporciona una introducción al FDA, cubriendo algunos de los conceptos fundamentales y las técnicas de análisis más comunes, con énfasis en su implementación práctica utilizando software disponible en R.
+
+# Preparación del Entorno R
+
+Para trabajar con FDA en R, necesitamos cargar algunos paquetes relevantes. Las fuentes mencionan varias bibliotecas útiles, como `fda`, `rainbow`, `refund`, `mgcv`, `fdapace`, `fdasrvf`, `elasdics`, `MFPCA`, `cluster`, `funHDDC`, entre otras.
+
+Instala los paquetes si aún no los tienes:
+
+```{r install_packages, eval=FALSE}
+install.packages("fda")
+install.packages("rainbow")
+install.packages("refund")
+install.packages("mgcv")
+install.packages("fdapace")
+install.packages("fdasrvf") # Para alineación elástica -->
+install.packages("elasdics") # Para datos irregulares/esparsos -->
+install.packages("MFPCA") # Para datos multivariados -->
+install.packages("cluster") # Para clustering estándar -->
+install.packages("funHDDC") # Para clustering basado en modelos funcionales -->
+install.packages("FDboost") # Para boosting funcional -->
+install.packages("GPFDA") # Para procesos gaussianos -->
+install.packages("scikit-fda") # Interfaz con scikit-learn de Python -->
+```
+
+Carga los paquetes que usaremos en este tutorial.
+
+```{r load_packages}
+library(fda)
+library(rainbow)
+library(refund)
+library(mgcv)
+library(fdapace)
+library(fdasrvf)
+library(elasdics)
+library(MFPCA)
+library(cluster)
+library(funHDDC)
+library(FDboost)
+library(GPFDA)
+```
+
+# Conceptos Fundamentales en FDA
+
+Las fuentes discuten varios conceptos fundamentales en FDA.
+
+## Datos Funcionales
+
+En la práctica, los datos funcionales se observan solo en una **rejilla discreta** de puntos de medición. Para **datos funcionales densos**, la rejilla es la misma para todas las funciones y (relativamente) densa en el dominio. Para **datos funcionales dispersos**, las rejillas son específicas de cada curva y pueden ser relativamente dispersas. A menudo, las funciones se observan con **errores de medición** adicionales. Un modelo típico para las observaciones es $X_i(t_{il}) = X_i(t_{il}) + \epsilon_{il}$, donde $X_i(t)$ es la función subyacente (suave) y $\epsilon_{il}$ son términos de ruido i.i.d..
+
+## Descriptivos y Detección de Outliers
+
+Los análisis descriptivos en FDA a menudo involucran la estimación de la **función media** $E(X(t)) = \mu(t)$ y la **función de covarianza** $Cov(X(s), X(t)) = \Sigma(s, t)$.
+
+Para la detección de outliers funcionales, se han desarrollado herramientas como los **boxplot funcionales** y los **bagplots funcionales**. Estos métodos se basan en medidas de profundidad funcional para ordenar las curvas y visualizar la dispersión central y los posibles outliers.
+
+Aquí tienes un ejemplo conceptual de cómo podrías visualizar datos funcionales y quizás usar herramientas descriptivas (no podemos usar los datos exactos del artículo sin descargarlos y prepararlos, pero este es el código general):
+
+```{r descriptives, eval=FALSE}
+# Suponiendo que 'functional_data' es un objeto fda o similar
+# con tus datos funcionales observados
+
+# Visualizar las curvas (Ejemplo basado en Figura 1 del source)
+plot(functional_data, main = "Visualización de Curvas Funcionales")
+
+# Calcular y graficar la media funcional (Conceptual)
+ plot(mean_function, col = "blue", lwd = 2, main = "Función Media")
+
+
+fbplot(functional_data, main = "Functional Boxplot")
+
+rainbowplot(functional_data, main = "Rainbow Plot")
+fbagplot(functional_data, main = "Functional Bagplot")
+```
+
+## Suavizado de Datos Funcionales
+
+Dado que los datos funcionales se observan discretamente y a menudo con error, el **suavizado** es un paso común para reconstruir las curvas subyacentes suaves. Esto es especialmente importante para datos dispersos.
+
+Un enfoque común es la **expansión en base**, representando cada función como una combinación lineal de funciones base (por ejemplo, B-splines). Otro enfoque es incorporar el suavizado directamente en el análisis, como en la estimación de la función de covarianza para FPCA.
+
+Ejemplo conceptual de suavizado usando expansión en base B-spline (usando el paquete `fda`):
+
+```{r smoothing, eval=FALSE}
+# Suponiendo que 'observed_points' son tus datos observados discretos
+# y 'time_points' son los momentos de observación
+
+# Crear una base de B-splines (ej. con 20 funciones base)
+n_basis <- 20
+basis_obj <- create.bspline.basis(rangeval = range(time_points), nbasis = n_basis)
+
+# Suavizar los datos observados proyectándolos sobre la base
+# smooth_functional_data <- smooth.basis(time_points, observed_points, basis_obj)$fd
+
+# Graficar datos originales y suavizados (Conceptual)
+# plot(time_points, observed_points, pch = 16, cex = 0.5, main = "Datos observados y suavizados")
+# lines(smooth_functional_data, col = "red", lwd = 2)
+```
+Las fuentes señalan que para sus datos de ejemplo de movimiento humano, que ya son suaves, una expansión con suficientes funciones base (ej. K=30 B-splines) permite una reconstrucción casi perfecta.
+
+## Variación de Amplitud y Fase (Alineación)
+
+Las diferencias entre curvas funcionales pueden deberse a variaciones en la **amplitud** (la forma o magnitud de la función) o en la **fase** (el momento en que ocurren las características de la función). La **alineación** o **registro** de funciones busca separar estas fuentes de variación, típicamente ajustando la escala de tiempo para que las características importantes de las curvas coincidan.
+
+Un enfoque para la alineación utiliza la **distancia elástica**, basada en la transformación square-root-velocity (SRVF), que constituye una distancia propia entre funciones módulo warping y evita problemas como el "pinching". Este enfoque permite alinear funciones o calcular un promedio después de la alineación.
+
+El paquete `fdasrvf` implementa opciones elásticas para funciones con el mismo número de puntos, mientras que `elasdics` es para datos irregulares o dispersos.
+
+Ejemplo conceptual de alineación (usando el paquete `fdasrvf`):
+
+```{r alignment, eval=FALSE}
+# Suponiendo que 'functional_data_curves' es una matriz o lista de curvas
+
+# Cargar paquete
+# library(fdasrvf) # Ya cargado
+
+# Convertir a formato esperado por fdasrvf si es necesario
+ fda_data_srvf <- fdasrvf::f_to_srvf(functional_data_curves)
+
+# Alinear las curvas
+ aligned_data <- fdasrvf::align_fPCA(fda_data_srvf) # O similar
+
+# Graficar curvas originales y alineadas (Conceptual, basado en Figura 4)
+ plot(functional_data_curves, main = "Curvas Originales")
+ plot(aligned_data$aligned_f, main = "Curvas Alineadas")
+```
+
+## Análisis de Componentes Principales Funcionales (FPCA)
+
+FPCA es una técnica clave de **reducción de dimensionalidad** en FDA. Es el análogo funcional del PCA para datos multivariados y busca representar la variabilidad de un conjunto de curvas utilizando una combinación lineal de un pequeño número de **funciones ortogonales (eigenfunciones)** y sus **puntuaciones de componentes principales funcionales (FPC scores)**. Esto se basa en la expansión de Karhunen-Loève.
+
+Para datos dispersos, la estimación de las eigenfunciones y las puntuaciones de FPCA a menudo incorpora suavizado en la estimación de la función de covarianza.
+
+El uso de FPCA transforma los datos funcionales en un vector de FPC scores, que puede ser utilizado en análisis posteriores. Varios paquetes en R implementan FPCA, incluyendo `fdapace::FPCA`, `refund::fpca.sc`, `refund::fpca.face`, y `MFPCA` para datos multivariados.
+
+Ejemplo conceptual de cómo realizar FPCA (usando el paquete `refund`):
+
+```{r fpca, eval=FALSE}
+# Suponiendo que 'functional_data_matrix' es una matriz con curvas en filas y puntos de tiempo en columnas
+# o un objeto que refund::fpca.face pueda manejar (como un objeto matrix o data.frame)
+
+# library(refund) # Ya cargado
+
+# Realizar FPCA usando fpca.face (método rápido)
+ fpca_result <- fpca.face(functional_data_matrix)
+
+# Visualizar la media y las primeras eigenfunciones (Conceptual, basado en Figura 25, 26)
+ plot(fpca_result$mu, type = 'l', main = "Función Media")
+ plot(fpca_result$efunctions[, 1], type = 'l', main = "Primera Eigenfunción")
+ plot(fpca_result$efunctions[, 2], type = 'l', main = "Segunda Eigenfunción")
+
+# Obtener las puntuaciones de FPCA
+ fpc_scores <- fpca_result$scores
+
+# Los FPC scores (fpc_scores) ahora pueden usarse en análisis multivariados estándar.
+```
+
+# Regresión Funcional
+
+La **regresión funcional** se aplica cuando al menos una variable en el modelo es funcional. Las fuentes distinguen tres escenarios principales:
+
+1.  **Regresión Escalar-sobre-Función(es) (SOFR):** La respuesta es escalar, los covariables son funcionales (y opcionalmente escalares). El modelo lineal funcional es un caso simple (Eq 5, 6). La interpretación clave es la **función coeficiente** $\beta(t)$. Modelos generalizados (para respuestas no gaussianas) también existen (Eq 7).
+2.  **Regresión Función-sobre-Escalar (FOSR):** La respuesta es funcional, los covariables son escalares. El modelo puede ser lineal (Eq 8) o aditivo (Eq 9).
+3.  **Regresión Función-sobre-Función(es) (FOFR):** La respuesta y los covariables son funcionales. Ejemplos incluyen el modelo concurrente (Eq 10) y modelos con efectos integrales o históricos (Eq 11, 36, 37).
+
+Las fuentes se centran en el enfoque **semiparamétrico usando funciones base** para la interpretabilidad. Esto implica representar las funciones coeficiente (o las funciones respuesta/covariable) usando una expansión en base, transformando el problema funcional en un problema multivariado con coeficientes base desconocidos que se estiman (a menudo con penalizaciones para suavidad). Alternativamente, se pueden usar los **FPC scores** de los covariables en un modelo multivariado estándar.
+
+También se mencionan enfoques **no paramétricos** usando kernels y métricas/semi-métricas para la predicción (Eq 19).
+
+El paquete `refund` (`pfr()` function) es muy versátil para ajustar una amplia gama de modelos de regresión funcional utilizando metodología `mgcv`.
+
+Ejemplo conceptual de ajuste de un modelo SOFR (usando `refund::pfr()`):
+
+```{r sofr, eval=FALSE}
+# Suponiendo que 'scalar_response' es un vector de respuestas escalares
+# y 'functional_covariate_matrix' es una matriz de datos funcionales (covariable)
+
+# library(refund) # Ya cargado
+
+# Ajustar un modelo lineal funcional
+# El argumento 'fpc' puede ser usado para usar un número fijo de FPCs
+# O 'bs' para suavizar el efecto de la función coeficiente
+ model_sofr <- pfr(scalar_response, y = functional_covariate_matrix, method = "REML", bs.y.opts = list(k=15)) # k es el número de bases
+
+# Resumen del modelo
+summary(model_sofr)
+
+# Graficar la función coeficiente estimada (Conceptual, basado en Figura 6)
+ plot(model_sofr)
+# O extraer y plotear manualmente
+ coef_function <- model_sofr$beta.fun # Esto puede variar dependiendo de la estructura de salida
+ plot(time_points, coef_function, type = 'l', main = "Función Coeficiente Estimada")
+# Agregar intervalos de confianza si están disponibles en el objeto del modelo
+```
+
+Ejemplo conceptual de ajuste de un modelo FOFR (usando `refund::pfr()`):
+
+```{r fofr, eval=FALSE}
+# Suponiendo que 'functional_response_matrix' es una matriz de respuesta funcional
+# y 'functional_covariate_matrix' es una matriz de datos funcionales (covariable)
+
+# Ajustar un modelo concurrente función-sobre-función
+# model_fofr_concurrent <- pfr(functional_response_matrix, y = functional_covariate_matrix, method = "REML")
+
+# Ajustar un modelo con efecto integral (Ejemplo conceptual, puede requerir estructura de datos específica)
+# model_fofr_integral <- pfr(functional_response_matrix, L = functional_covariate_matrix, method = "REML")
+
+# Graficar los resultados (Conceptual)
+# Dependiendo del modelo, se graficarán las funciones coeficiente 2D o efectos suaves
+# plot(model_fofr_concurrent)
+```
+Las fuentes también discuten cómo obtener **intervalos de confianza (CI)** para las funciones coeficiente estimadas, a menudo basados en la perspectiva de modelos mixtos y la distribución posterior de los coeficientes base.
+
+# Inferencia Estadística con Datos Funcionales
+
+## Análisis de Varianza Funcional (Functional ANOVA)
+
+El Functional ANOVA compara las **funciones medias** de dos o más grupos. La hipótesis nula es que las funciones medias son iguales a lo largo de todo el dominio (Eq 22). Esto puede verse como un modelo lineal función-sobre-escalar con un covariable categórico (Eq 23).
+
+Existen varios métodos de prueba, incluyendo aquellos basados en la integral de la varianza explicada (Eq 27), el estadístico F pointwise (Eq 28), o enfoques basados en distancias o proyecciones aleatorias. Las fuentes advierten sobre la interpretación de múltiples pruebas y la reproducibilidad con métodos basados en proyecciones aleatorias.
+
+El paquete `fdapace` (`anova.FPCA()` function) o `fdatest` ofrecen herramientas para Functional ANOVA.
+
+Ejemplo conceptual de Functional ANOVA (usando `fdapace`):
+
+```{r functional_anova, eval=FALSE}
+# Suponiendo que 'functional_data' es un objeto con datos funcionales
+# y 'group_labels' es un vector con las etiquetas de grupo para cada función
+
+# library(fdapace) # Ya cargado
+
+# Realizar FPCA primero (a menudo un paso necesario)
+# fpca_res <- FPCA(functional_data, ...) # Configurar según tus datos
+
+# Realizar ANOVA sobre los datos funcionales o los FPCs
+# anova_result <- anova.FPCA(functional_data, group_labels, ...) # Puede variar según el método
+# O usar el paquete fdatest
+# library(fdatest)
+# result_itp <- itp(data = functional_data, group = group_labels) # Asumiendo formato compatible
+
+# Imprimir resumen o p-valores (Conceptual, basado en Figura 10)
+# print(anova_result)
+# plot(result_itp)
+```
+
+## Pruebas e Intervalos de Confianza en Regresión Funcional
+
+En SOFR, el interés común es probar si el covariable funcional tiene un efecto significativo en la respuesta escalar, lo que a menudo se traduce en probar si la función coeficiente es cero ($\beta(t)=0$). Se pueden utilizar pruebas basadas en modelos mixtos (RLRT), pruebas FPCA adaptadas (Wald, Score, LR, F), o pruebas basadas en proyecciones aleatorias.
+
+Los **intervalos de confianza pointwise** para la función coeficiente estimada (como se muestra en la Figura 6) se pueden obtener utilizando la perspectiva bayesiana del proceso de suavizado, a menudo implementado en funciones como `refund::pfr()`.
+
+Ejemplo conceptual de obtención de CI pointwise para la función coeficiente SOFR:
+
+```{r regression_ci, eval=FALSE}
+# Suponiendo que 'model_sofr' es un modelo ajustado con refund::pfr()
+
+# La función plot() de pfr() ya suele mostrar los intervalos de confianza pointwise (Conceptual, basado en Figura 6)
+# plot(model_sofr, main = "Función Coeficiente con CIs")
+
+# Si necesitas los valores numéricos de los CIs (la estructura puede variar)
+# ci_values <- model_sofr$ci # Esto es solo un ejemplo, revisa la documentación de la función
+# plot(time_points, model_sofr$beta.fun, type = 'l')
+# lines(time_points, ci_values$lower, lty = 2, col = "blue")
+# lines(time_points, ci_values$upper, lty = 2, col = "blue")
+```
+Es crucial considerar la correlación dentro de la función al calcular los intervalos de confianza en modelos FOSR o FOFR.
+
+# Clasificación y Clustering de Datos Funcionales
+
+## Clasificación Funcional
+
+El objetivo de la **clasificación funcional** es asignar nuevas observaciones funcionales a clases predefinidas basándose en datos de entrenamiento con etiquetas conocidas. Esto se puede hacer estimando las probabilidades de clase posteriores.
+
+Métodos incluyen:
+-   Modelos logit/multinomiales funcionales (generalización del modelo lineal funcional).
+-   Enfoques no paramétricos kernel-based (Eq 29).
+-   k-Nearest Neighbors funcional.
+-   Análisis discriminante lineal funcional.
+-   Uso de **FPC scores** como entrada para clasificadores multivariados estándar (bosques aleatorios, redes neuronales, etc.).
+-   Uso de datos funcionales directamente en redes neuronales convolucionales (CNNs).
+
+El paquete `fdaoutlier` es útil para la detección de outliers funcionales, que puede estar relacionada con la clasificación o pre-procesamiento.
+
+Ejemplo conceptual de clasificación usando FPC scores:
+
+```{r classification_fpca, eval=FALSE}
+# Suponiendo que 'fpca_result' es un resultado de FPCA y 'class_labels' son las etiquetas de clase
+
+# Obtener los FPC scores
+# fpc_scores <- as.data.frame(fpca_result$scores)
+# fpc_scores$class <- class_labels
+
+# Usar un clasificador multivariado estándar (ej. random forest)
+# library(randomForest)
+# model_rf <- randomForest(class ~ ., data = fpc_scores)
+
+# Predecir clases para nuevos datos funcionales (primero aplica FPCA a los nuevos datos)
+# new_functional_data_matrix <- ... # Nuevos datos
+# new_fpc_scores <- predict(fpca_result, newdata = new_functional_data_matrix) # Ejemplo conceptual, la función predict() puede variar
+# predict(model_rf, newdata = as.data.frame(new_fpc_scores))
+```
+
+## Clustering Funcional
+
+El **clustering funcional** busca agrupar observaciones funcionales similares sin conocimiento previo de etiquetas de clase.
+
+Enfoques comunes:
+-   Calcular una matriz de distancia/similitud funcional (ej. distancia L2) y usar algoritmos de clustering estándar (hclust, kmeans) en esa matriz o en los datos (si el algoritmo lo soporta).
+-   Reducir la dimensionalidad usando **FPCA** o expansión en base, y luego aplicar algoritmos de clustering estándar en los scores o coeficientes resultantes.
+-   Clustering basado en modelos funcionales, como los modelos de mezcla.
+
+Paquetes útiles incluyen `stats` (para `hclust`, `kmeans`), `cluster`, y `funHDDC`.
+
+Ejemplo conceptual de clustering usando FPC scores (similar a la Figura 12):
+
+```{r clustering_fpca, eval=FALSE}
+# Suponiendo que 'fpca_result' es un resultado de FPCA
+
+# Obtener los FPC scores (usaremos los dos primeros para visualización, como en Figura 12)
+# fpc_scores <- fpca_result$scores[, 1:2]
+
+# Aplicar k-means clustering
+# k <- 3 # Número de clusters
+# kmeans_result <- kmeans(fpc_scores, centers = k)
+
+# Visualizar los clusters en el espacio de FPC (Conceptual, basado en Figura 12)
+# plot(fpc_scores, col = kmeans_result$cluster, pch = 16,
+#      xlab = paste0("Componente 1 (", round(fpca_result$var.prop*100), "% Varianza)"),
+#      ylab = paste0("Componente 2 (", round(fpca_result$var.prop*100), "% Varianza)"),
+#      main = "Clustering en el Espacio de FPC")
+# points(kmeans_result$centers, col = 1:k, pch = 3, cex = 2, lwd = 2)
+
+# O usar clustering jerárquico (Conceptual, basado en Figura 11)
+# distance_matrix <- dist(fpc_scores) # Distancia euclidiana en los scores
+# hclust_result <- hclust(distance_matrix, method = "complete") # Puedes probar otros métodos
+# plot(hclust_result, main = "Dendrograma de Clustering (basado en FPCs)")
+
+# Para clustering basado en modelos funcionales (requiere funHDDC)
+# library(funHDDC)
+# model_hddc <- funHDDC(functional_data_matrix, K = k, ...) # Configurar según tus datos
+# plot(model_hddc)
+```
+
+# Enfoques de Machine Learning para FDA
+
+El FDA también se intersecta con el Machine Learning (ML) y el Deep Learning (DL). Mientras que los métodos estadísticos clásicos en FDA a menudo se centran en la interpretabilidad de las relaciones (por ejemplo, la función coeficiente $\beta(t)$), los enfoques de ML/DL suelen priorizar el **rendimiento predictivo**.
+
+Dos categorías principales:
+1.  **Enfoques Implícitos:** Preprocesar los datos funcionales para convertirlos en representaciones escalares o de imagen para usarlos con algoritmos de ML/DL estándar. Por ejemplo, representar datos multivariados funcionales como una matriz V x p ("imagen") para usar con CNNs pre-entrenadas.
+2.  **Enfoques Explícitos:** Adaptar algoritmos de ML/DL para que operen directamente con la naturaleza funcional de los datos. Ejemplos incluyen:
+    -   **SVMs funcionales:** Usando kernels adaptados para espacios funcionales.
+    -   **Gaussian Processes Functional Regression (GPFR):** Combinando regresión funcional lineal con procesos gaussianos.
+    -   **Boosting funcional (FDboost):** Enfoques de gradient boosting adaptados para modelos de regresión funcional.
+    -   **Métodos basados en árboles funcionales:** Random Forests funcionales.
+    -   **Redes Neuronales Funcionales:** Adaptaciones de MLPs y otras arquitecturas para tomar funciones como entrada (Eq 30).
+
+Paquetes como `FDboost`, `FuncNN`, `funGp`, `GPFDA`, y `scikit-fda` implementan algunos de estos métodos.
+
+Ejemplo conceptual (mencionando paquetes, la implementación específica varía):
+
+```{r ml_approaches, eval=FALSE}
+# Ejemplos de uso de paquetes ML/DL para FDA
+
+# Boosting funcional (regresión)
+# library(FDboost)
+# model_boost <- FDboost(scalar_response ~ %O% functional_covariate_matrix, data = list(scalar_response, functional_covariate_matrix)) # Sintaxis conceptual, verificar docs
+# summary(model_boost)
+
+# Redes neuronales funcionales
+# library(FuncNN) # Verificar si está en CRAN o GitHub
+# model_fnn <- ... # La sintaxis dependerá mucho del paquete
+
+# Procesos Gaussianos para FDA
+# library(GPFDA)
+# model_gp <- GPFDA(...) # Configurar según tus datos
+
+# Usando scikit-fda (requiere Python)
+# from skfda.ml.classification import NearestNeighborsClassifier as KNC
+# from skfda.datasets import fetch_growth_male
+# dataset = fetch_growth_male()
+# X = dataset['data']
+# y = dataset['target']
+# knc = KNC()
+# knc.fit(X, y)
+# knc.predict(X)
+```
+
+# Conexiones con Otros Campos y Desarrollos Futuros
+
+El FDA está relacionado con otros campos como el análisis de datos **longitudinales**, **series temporales**, y datos **espaciotemporales**. Los datos funcionales dispersos son relevantes para el análisis de datos longitudinales.
+
+También hay un interés creciente en ir **más allá de las funciones 1D**, considerando FDA como parte de un análisis de "datos de objetos" más general. Esto incluye:
+-   **Imágenes** y datos con dominios de dimensiones superiores (d>1).
+-   **Funciones multivariadas** (salida vectorial en d>1).
+-   Análisis de **formas** (invariante a reparametrización, rotación, traslación, escala).
+-   Análisis de **datos composicionales** (densidades, etc.).
+-   **Datos funcionales generalizados** (respuesta no gaussiana condicionada a una curva media suave).
+-   Datos de **covarianza-valorada**, **proceso puntual-valorado**, **árbol- o red-valorada**.
+
+El campo del FDA y el análisis de datos de objetos son áreas activas de investigación con muchos desarrollos esperados.
+
+# Software Adicional
+
+Las fuentes mencionan que el **CRAN Task View: Functional Data Analysis** lista la mayoría de los paquetes R relacionados con FDA. Se anima a explorar este recurso para encontrar herramientas para tareas específicas.
+
+Además de los ya mencionados, el código y los datos utilizados en el artículo están disponibles públicamente en **GitHub**, lo que permite reproducir los análisis presentados.
+
+```{r github_link, echo=FALSE}
+# Puedes añadir un enlace directo aquí si lo deseas
+# print("Código y datos disponibles en:")
+# print("https://github.com/davidruegamer/FDA_tutorial")
+```
+
+# Referencias
+
+Las siguientes referencias son algunas de las citadas en el artículo de origen y son fundamentales en el campo del FDA y sus extensiones.
+
+```{r references, echo=FALSE, results='asis'}
+# Esto es solo una selección. Para una lista completa,
+# puedes copiar las referencias del documento PDF.
+cat("
+* Gertheiss, J., et al. (2024). Functional Data Analysis: An Introduction and Recent Developments. *Biometrical Journal*, 15214036.
+* Ramsay, J. O., and Silverman, B. W. (2005). *Functional Data Analysis*. Springer.
+* (Descripción de notación y tipos de datos funcionales)
+* Sun, Y., and Genton, M. G. (2011). Functional boxplots. *Journal of Computational and Graphical Statistics*, 20(1), 1-19.
+* Hyndman, R. J., and Shang, H. L. (2010). Rainbow plots, bagplots, and boxplots for functional data. *Journal of Computational and Graphical Statistics*, 19(1), 29-45.
+* Yao, G., Müller, H. G., and Wang, J. L. (2005). Functional data analysis for sparse longitudinal data. *Journal of the American Statistical Association*, 100(470), 577-590.
+* (Ejemplo de B-splines en el artículo)
+* Srivastava, A., et al. (2010). Functional data analysis of curves via inner products of square-root velocity functions. *Electronic Journal of Statistics*, 4, 1193-122 Srivastava.
+* (Descripción de FPCA y KL expansion)
+* (Mención del Task View de CRAN y paquetes)
+* Wood, S. N. (2017). *Generalized Additive Models: An Introduction with R*. CRC Press.
+* (Software para alineación)
+* (Software para FPCA)
+* (Tipos de regresión funcional)
+* (Modelo lineal funcional SOFR)
+* (Extensión del modelo lineal funcional SOFR, ejemplo pfr)
+* (Modelos GLM funcionales)
+* (Modelos FOSR y aditivos FOFR)
+* (Modelos lineales FOFR)
+* (Efectos históricos en FOFR)
+* (Enfoque semiparamétrico con bases)
+* (Uso de FPC scores en regresión)
+* (Enfoque no paramétrico en regresión)
+* (Predicción kernel-based, Eq 19)
+* (Elección de (semi-)métrica)
+* (Software para regresión funcional)
+* (Hipótesis de Functional ANOVA)
+* (Estadísticos de prueba Functional ANOVA)
+* (Enfoques basados en distancias y proyecciones Functional ANOVA)
+* (Advertencias sobre pruebas múltiples y proyecciones aleatorias)
+* (Cálculo de CIs en regresión)
+* (Introducción a la clasificación funcional)
+* (Generalización a >2 clases, enfoque kernel)
+* (kNN funcional)
+* (Otros métodos de clasificación funcional)
+* (Software para clustering)
+* (Clustering basado en modelos)
+* (ML/DL en FDA - enfoque predictivo)
+* (Enfoques implícitos ML)
+* (Métodos clásicos de ML explícitos)
+* (Redes neuronales funcionales - MLP)
+* (Definición recursiva MLP funcional)
+* (Software para ML/DL en FDA)
+* (Relación con otros campos y segunda generación de datos funcionales)
+* (Más allá de 1D, datos de objetos)
+* (Otros ejemplos de datos de objetos)
+* (Área activa de investigación)
+* (Disponibilidad de código y datos en GitHub)
+* (Open Research Badge - reproducible code)
+* Happ-Kurz, C. (2022). MFPCA: Multivariate Functional Principal Component Analysis for Data Observed on Different Dimensional Domains. R Package Version 1.3-10.
+* Koner, S., & Staicu, A. M. (2023). Second-generation functional data. *Annual Review of Statistics and Its Application*, 10, 547-572.
+* Pini, A., and Vantini, S. (2016). The interval testing procedure: A general framework for inference in functional data analysis. *Biometrics*, 72(3), 835-845.
+")
+```
+```
+
+Este es un documento R Markdown que puedes copiar y pegar directamente en un archivo `.Rmd`. Cuando lo compiles (por ejemplo, haciendo clic en "Knit" en RStudio), generará un documento HTML (u otro formato si lo especificas) con el texto, código R y las salidas del código (si `eval=TRUE`).
+
+He incluido:
+-   Una estructura básica de R Markdown.
+-   Secciones para cada tema clave discutido en las fuentes y nuestra conversación.
+-   Bloques de código R (````{r}`) con ejemplos conceptuales para las tareas principales (visualización, suavizado, FPCA, regresión, ANOVA, clasificación, clustering).
+-   Comentarios dentro del código (`#`) para explicar cada paso.
+-   Notas (`eval=FALSE`) para bloques de código que no se ejecutarán automáticamente al compilar, ya sea porque requieren instalación de paquetes, datos específicos no incluidos, o configuración adicional (como el entorno Python para `scikit-fda`).
+-   Explicaciones en texto plano usando Markdown.
+-   Referencias a las fuentes utilizando la notación `[i]` o `[i, j]` después de las declaraciones correspondientes.
+-   Una sección de referencias listando algunas de las fuentes clave.
+
+Recuerda que este código es conceptual en muchos casos. Para ejecutarlo realmente con tus propios datos o con los datos de ejemplo del artículo (disponibles en GitHub), deberás adaptar las rutas de archivo, los nombres de variables y asegurarte de que tus datos estén en el formato correcto que espera cada función de los paquetes de R.
+
+Espero que este formato R Markdown te sea útil para explorar y aplicar los conceptos de FDA en R. ¡Avísame si tienes más preguntas!
