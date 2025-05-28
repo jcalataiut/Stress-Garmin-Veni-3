@@ -60,6 +60,14 @@ df_all <- bind_rows(
     id = factor(user_id)
   )
 
+periodos <- cut(
+  df_all$calendar_date_local,
+  breaks = as.Date(c("2024-01-01", "2025-01-18", "2025-02-01", "2025-02-15", "2025-03-01", "2026-03-31")),
+  labels = c("antes", "2_previas", "durante", "2_posteriores", "despues"),
+  right = FALSE
+)
+df_all$periodo <- periodos
+
 # Variables de interés para análisis
 var_interes <- c(
   "body_battery_avg", "body_battery_min", "bbi_avg", "dev_50ms",
@@ -150,6 +158,9 @@ df_all_filtr_id <- df_all %>%
 # ================================
 # 3. FUNCIÓN GENERAL PARA ANALIZAR UNA VARIABLE
 # ================================
+
+# 3 etapas
+
 library(fda)
 library(fda.usc)
 
@@ -210,4 +221,73 @@ for (var in var_interes) {
   analisis_funcional_variable(df_all_filtr_id, var)
 }
 
+
+
+# 5 etapas
+
+
+library(fda)
+library(fda.usc)
+
+analisis_funcional_variable <- function(df, variable) {
+  cat("\n\n==== Análisis funcional de:", variable, "====\n")
+  
+  periodos <- levels(df$periodo)
+  par(mfrow = c(1, length(periodos)))
+  
+  for (periodo_i in periodos) {
+    df_periodo <- df %>%
+      filter(periodo == periodo_i) %>%
+      dplyr::select(id, calendar_date_local, all_of(variable))
+    
+    df_wide <- df_periodo %>%
+      pivot_wider(names_from = calendar_date_local, values_from = all_of(variable)) %>%
+      column_to_rownames("id")
+    
+    mat <- as.matrix(df_wide)
+    mat <- mat[rowSums(is.na(mat)) <= 3, ]
+    if (nrow(mat) < 2) {
+      cat("No hay suficientes datos en periodo", periodo_i, "\n")
+      next
+    }
+    
+    for (j in 1:ncol(mat)) {
+      if (any(is.na(mat[, j]))) {
+        mat[is.na(mat[, j]), j] <- mean(mat[, j], na.rm = TRUE)
+      }
+    }
+    
+    fdatos <- fdata(mat)
+    
+    # Mostrar las curvas funcionales
+    global_vals <- df %>% pull(all_of(variable))
+    global_min <- min(global_vals, na.rm = TRUE)
+    global_max <- max(global_vals, na.rm = TRUE)
+    
+    plot(fdatos,
+         main = paste("Curvas funcionales -", periodo_i),
+         xlab = "Día relativo", ylab = variable,
+         ylim = c(global_min, global_max))
+    
+    # Convertir a fd y graficar la media
+    fdobj <- fdata2fd(fdatos)
+    lines(mean.fd(fdobj), col = "blue", lwd = 3)
+  }
+  
+  par(mfrow = c(1, 1))
+}
+
+
+# ================================
+# 4. APLICAR A VARIABLES DE INTERÉS
+# ================================
+var_interes <- c(
+  "body_battery_avg", "heart_rate_avg", "rmssd", "sdnn", "stress_avg"
+)
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(tidyverse, janitor, fda.usc)
+# Ejecutar análisis para cada variable
+for (var in var_interes) {
+  analisis_funcional_variable(df_all_filtr_id, var)
+}
 
