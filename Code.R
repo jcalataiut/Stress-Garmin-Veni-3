@@ -375,7 +375,6 @@ deteccio <- desc_indiv_clean %>%
   filter(flag == 1) %>% 
   dplyr::select(id, variable)
 
-
 desc_indiv_clean <- desc_indiv_clean %>%
   anti_join(deteccio, by = c("id", "variable")) 
 
@@ -385,89 +384,139 @@ shapiro_res <- desc_indiv_clean %>%
   mutate("shapiro_test" = map(valores, ~ shapiro_test(..1))) %>% 
   mutate("pvalor" = map_dbl(shapiro_test, ~ ..1$p.value))
 
-shapiro_res %>% filter(pvalor > 0.05)
+# en que hi hagui només una de les fases sense normalitat ja no es pot fer anova
+delete_NOnormal <- shapiro_res %>% filter(pvalor < 0.05) %>%
+  dplyr::select(variable, id) %>% unique 
+
+
+shapiro_res_clean <- shapiro_res %>% 
+  anti_join(delete_NOnormal, by = c("id", "variable"))
+
+### Aquestes son les que poden fer-se anova, en la resta hi ha que recurrir a un altre tipus d'anàlisi -> Friedman
+### Ara queda veure que complisquen les condicions d'esfericitat
+
+aux <- shapiro_res_clean %>% dplyr::select(variable,id) %>% unique
+pval.leven <- numeric(nrow(aux))
+for(i in 1:nrow(aux)){
+  vari <- aux$variable[i]
+  indiv <- aux$id[i]
+  df.aux <- shapiro_res_clean %>% filter(variable == vari, id==indiv) %>% dplyr::select(variable, id, fase, valores)
+  df_expandido <- df.aux %>%
+    unnest(cols = valores) %>%        # “despliega” cada lista en filas
+    rename(valor = valores) 
+  leven.test <- leveneTest(valor ~ fase, data = df_expandido)# si p<0.05 rebutja homogenietat de variàncies. ANOVA necessita que esto siga cert
+  pval.leven[i] <- leven.test$`Pr(>F)`
+}
+
+aux$pval.leven <- pval.leven # todas aquellas que no cumplan levenne no se puede aplicar anova
+
+delete.NOleven <- aux %>% filter(pval.leven < 0.05) %>%
+  dplyr::select(variable, id) %>% unique 
+
+shapiro_leven_res_clean <- shapiro_res_clean %>% 
+  anti_join(delete.NOleven, by = c("id", "variable")) # totes aquestes verifiquen
+
+shapiro_leven_res_clean_expandido <- shapiro_leven_res_clean %>%
+  unnest(cols = valores) %>%        
+  rename(valor = valores) %>% dplyr::select(variable, id, fase,  valor)
+
+anova_by_id <- shapiro_leven_res_clean_expandido %>%
+  group_by(variable, id) %>%
+  do({
+    fit <- aov(valor ~ fase, data = .)
+    broom::tidy(fit)
+  }) %>%
+  ungroup() %>%
+  # Nos quedamos solo con el término “fase”
+  filter(term == "fase") %>%
+  select(variable, id,
+         df = df, 
+         F = statistic, 
+         p.value)
+
+anova_by_id$method <- rep("ANOVA", nrow(anova_by_id))
+
+print(anova_by_id) # si p<0.05 rebutje la igualtat de mitjanes entre fases, almenys una es diferents (problema -> que no sabem quina)
+
+# CONCLUSIÓ ANOVA!!!
+# independement d'això, si no es rebutja la igualtat de mitjanes, este mètode ens ajuda a detectar quines variables 
+# son tenen un comportament no significativament diferent entre fases.
+
+# Endemés, en els casos en que la ANOVA ha donat significatiu i, per tant, hi ha diferències significatives entre 
+# almeny un dels grups respecte de la resta. Aleshores apliquem el test de Tuckey:
+
+
+# 1) Filtrar sólo los combos con ANOVA significativa
+sig_anova <- anova_by_id %>%
+  filter(p.value < 0.05) %>%
+  select(variable, id)
+
+# 2) Para cada uno, hacer Tukey HSD
+tukey_by_id <- shapiro_leven_res_clean_expandido %>%
+  semi_join(sig_anova, by = c("variable", "id")) %>%  # quedarnos sólo con casos sign.
+  group_by(variable, id) %>%
+  do({
+    fit <- aov(valor ~ fase, data = .)
+    th  <- TukeyHSD(fit, "fase")
+    df  <- as.data.frame(th$fase) %>%
+      tibble::rownames_to_column("comparison") %>%
+      transmute(
+        comparison,
+        adj.p.value = `p adj`
+      )
+    # añadimos cols de clave
+    mutate(df,
+           variable = unique(.$variable),
+           id       = unique(.$id))
+  }) %>%
+  ungroup() %>%
+  select(variable, id, comparison, adj.p.value)
+
+print(tukey_by_id)
 
 
 
+# A aquells que no hem aplicar anova apliquem krustal-wallis: que no presenta suposicioons de normalitat ni homogenietat de variancia
 
 
-anova <- desc_indiv_clean %>%
-  group_by(variable) %>%
-  anova_test(
-    dv    = valores[[1]],   # variable dependiente
-    wid   = id,     # sujeto
-    within = fase   # factor intra‐sujetos
+desc_indiv_clean_krutal <- desc_indiv_clean %>%
+  anti_join(anova_by_id %>% dplyr::select(variable, id),  # elimine aquelles que ja els he aplicat anova
+            by = c("id", "variable")) 
+
+
+desc_indiv_clean_krutal_expandido <- desc_indiv_clean_krutal %>%
+  unnest(cols = valores) %>%        
+  rename(valor = valores) %>% dplyr::select(variable, id, fase,  valor)
+
+
+kruskal_by_id <- desc_indiv_clean_krutal_expandido %>%
+  group_by(variable, id) %>%
+  kruskal_test(valor ~ fase) %>%
+  ungroup()
+
+print(kruskal_by_id)
+
+# Els casos en que els krustal dona significatiu podem aplicar post-hoc per veure entre 
+# quines fases hi ha diferències mitjançant el post-hoc dunn
+
+
+detec.Krustal.signif <- kruskal_by_id %>% filter(p>0.05) %>%
+  dplyr::select(variable, id) # agafe els que no son significatius 
+
+desc_indiv_clean_krutal_signif_expandido_ <- desc_indiv_clean_krutal_expandido %>%
+  anti_join(detec.Krustal.signif,  # elimine aquelles que krustal no dona significatiu
+            by = c("id", "variable")) 
+
+
+posthoc_dunn_by_id <- desc_indiv_clean_krutal_signif_expandido_ %>%
+  group_by(variable, id) %>%
+  dunn_test(
+    valor ~ fase,
+    p.adjust.method = "bonferroni"
   ) %>%
-  get_anova_table()
+  ungroup()
+
+print(posthoc_dunn_by_id)
 
 
 
-# 4) Comprobación supuestos de ANOVA de medidas repetidas ----------------
-# 4.1) Normalidad de residuos por variable
-norm_check <- df_long_clean %>%
-  group_by(variable) %>%
-  shapiro_test(residuals = TRUE, dv = valor, wid = id, within = fase)
-
-print(norm_check)
-
-# 4.2) Esfericidad (Mauchly)
-spher_check <- df_long %>%
-  group_by(variable) %>%
-  anova_test(dv = valor, wid = id, within = fase) %>%
-  get_sphericity()
-
-print(spher_check)
-
-# 5) Pruebas globales ----------------------------------------------------
-anova_res   <- df_long %>%
-  group_by(variable) %>%
-  anova_test(dv = valor, wid = id, within = fase)
-
-friedman_res <- df_long %>%
-  group_by(variable) %>%
-  friedman_test(valor ~ fase | id)
-
-# Combinar resultados
-global_res <- anova_res %>%
-  select(variable, F, df1, df2, p) %>%
-  rename(p_value = p) %>%
-  mutate(test = "rmANOVA") %>%
-  bind_rows(
-    friedman_res %>%
-      rename(p_value = p) %>%
-      mutate(test = "Friedman")
-  )
-
-print(global_res)
-
-# 6) Comparaciones post-hoc pareadas -------------------------------------
-# 6.1) Si usas rmANOVA → pairwise paired t-tests
-posthoc_anova <- df_long %>%
-  group_by(variable) %>%
-  pairwise_t_test(
-    dv = valor, paired = TRUE,
-    p.adjust.method = "bonferroni",
-    within = fase
-  )
-
-# 6.2) Si usas Friedman → pairwise Wilcoxon
-posthoc_friedman <- df_long %>%
-  group_by(variable) %>%
-  pairwise_wilcox_test(
-    dv = valor, paired = TRUE,
-    p.adjust.method = "bonferroni",
-    within = fase
-  )
-
-posthoc_res <- bind_rows(
-  posthoc_anova  %>% mutate(test = "t_pareado"),
-  posthoc_friedman %>% mutate(test = "Wilcoxon")
-)
-
-print(posthoc_res)
-
-# 7) Filtrar comparaciones significativas -------------------------------
-sig_comps <- posthoc_res %>%
-  filter(p.adj < 0.05)
-
-print(sig_comps)
