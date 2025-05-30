@@ -518,5 +518,385 @@ posthoc_dunn_by_id <- desc_indiv_clean_krutal_signif_expandido_ %>%
 
 print(posthoc_dunn_by_id)
 
+### CODI NUEVO PARA FDA (JOSEEE)
+
+
+# Ara anem a quedar-nos només amb aquelles variables que son significatives amb ANOVA i Kruskal-Wallis
+
+kruskal_by_id_modif <- kruskal_by_id %>% dplyr::select(variable, id, p, method)
+
+df_anova_krustal <- rbind(anova_by_id_modif, kruskal_by_id_modif)
+df_anova_krustal_sig <- df_anova_krustal %>% filter(p<0.05)
+print(df_anova_krustal_sig)
+
+df_anova_krustal_sig %>% arrange(variable, id)
+
+desc_indiv_clean_analis <-  desc_indiv_clean %>%
+  semi_join(df_anova_krustal_sig,  # em quede amb aquelles que han donat significatiu
+            by = c("id", "variable")) 
+
+
+
+
+
+nomas <- desc_indiv_clean_analis %>% dplyr::select(variable,id) %>% unique()
+
+
+nomas_variables <- nomas %>% group_by(variable) %>% count() 
+nomas_id <- nomas %>% group_by(id) %>% count() 
+
+# cojo todos los id's menos el 002
+# de variables aquelles que tingan más de 3 significativos por variable
+
+bones_val <- nomas_variables %>% filter(n>2) %>% pull(variable)
+
+desc_indiv_clean_modif <- desc_indiv_clean %>% 
+  filter(variable %in% c("BBI (avg)", "Body Battery (avg)", 
+                          "RMSSD", "Stress (avg)")) %>%
+  filter(id %in% c("id_001", "id_005","id_007","id_009"))
+
+
+###########
+# FDA 
+###########
+
+
+# 1) Preparar una malla temporal común (0 a 1, 100 puntos)
+grid <- seq(0, 1, length.out = 100)
+
+# 2) Interpolar cada vector a la malla
+
+#data_corregit <- desc_indiv_clean_analis %>% filter(variable %in% bones_val, id != "id_002")
+data_corregit <- desc_indiv_clean_modif
+
+
+df_curvas <- data_corregit %>%        # df_listas: variable, id, fase, valores (lista)
+  mutate("curve" = map(valores, ~ approx(x  = seq(0,1,length.out = length(.x)),
+                                         y  = ..1,
+                                         xout = grid)$y)) %>%
+  mutate("curve" = map(curve, ~ na.approx(..1, rule=2)))
+
+
+
+
+
+# EXEMPLE CONCRET A UNA VARIABLE #
+############################################################
+curvas_X <- df_curvas %>%
+  filter(variable == bones_val[1])
+
+
+# 2.1) Matriz: cada fila es una curva interpolada en `grid`
+mat_X <- do.call(rbind, curvas_X$curve)
+
+# 2.2) Factor de grupos (fase)
+grp_X <- curvas_X$fase
+
+tabla_X <- table(grp_X)
+
+if (!all(levels(grp_X) %in% names(tabla_X)) || any(tabla_X < 2)) {
+  stop("No hay suficientes curvas en alguna fase para ‘Awake Duration (s)’")
+}
+
+
+# 3.1) fdata encapsula tus curvas y el eje 'grid'
+fd_X <- fdata(mat_X,
+              argvals  = grid,
+              rangeval = range(grid))
+
+
+flong <- function(mat_X){
+  
+}
+
+# 1. Crear un data.frame largo
+df_long <- mat_X %>%
+  as.data.frame() %>% 
+  mutate(curve = row_number(),            # identificador de curva
+         phase = grp_X) %>%               # fase asociada a cada curva
+  pivot_longer(
+    cols      = -c(curve, phase),
+    names_to  = "time_idx",
+    values_to = "value"
+  ) %>%
+  mutate(
+    # extraer el valor real de tiempo de la columna names (asumiendo que sus nombres son 'V1','V2',…)
+    time = grid[as.integer(gsub("V", "", time_idx))]
+  )
+
+# 2. Plot con facets
+ggplot(df_long, aes(x = time, y = value, group = curve, color = phase)) +
+  geom_line() +
+  facet_wrap(~ phase, nrow = 1) +
+  scale_color_manual(values = cols) +
+  labs(
+    title = "Curvas: Awake Duration (s)",
+    x     = "Tiempo normalizado",
+    y     = "Awake Duration (s)"
+  ) +
+  theme_minimal()
+
+
+df_long_id <- do.call(rbind, curvas_X$curve) %>%
+  as.data.frame() %>%
+  mutate(
+    id    = rep(curvas_X$id, each = ncol(.)),    # repetir cada id para sus columnas
+    phase = rep(curvas_X$fase, each = ncol(.)),  # idem para fase
+    time_idx = rep(names(.), times = nrow(curvas_X))  # nombres V1…V100
+  ) %>%
+  rename_with(~ seq_along(grid), everything(), .cols = names(curves_X$curve[[1]])) %>%
+  pivot_longer(
+    cols      = starts_with("V"),
+    names_to  = "time_idx",
+    values_to = "value"
+  ) %>%
+  mutate(
+    time = grid[as.integer(gsub("V", "", time_idx))]
+  )
+
+# Ahora plot por id, con facets para cada phase
+ggplot(df_long_id, aes(x = time, y = value, group = id, color = id)) +
+  geom_line() +
+  facet_wrap(~ phase, nrow = 1) +
+  labs(
+    title = "Curvas: Awake Duration (s) por ID",
+    x     = "Tiempo normalizado",
+    y     = "Awake Duration (s)",
+    color = "ID"
+  ) +
+  theme_minimal()
+
+################################################################
+
+
+# AMB TOTES LES VARIABLES
+
+grid <- seq(0, 1, length.out = 100)
+cols <- c("antes" = "blue", "durante" = "red", "después" = "black")
+
+# Partimos de df_curvas, que ya tiene las curvas interpoladas en list-column “curve”
+# y las fases en “fase”
+df_results <- df_curvas %>%
+  group_by(variable) %>%
+  nest() %>%                                         # 1) Anidamos por variable
+  mutate(
+    # 2) Para cada variable, montamos la matriz
+    mat = map(data, ~ do.call(rbind,  .x$curve)),
+    # 3) Recuperamos el factor fase (para ggplot)
+    phases = map(data, ~ .x$fase),
+    # 4) Creamos el objeto fdata
+    fd   = map(mat,   ~ fdata(.x,
+                              argvals  = grid,
+                              rangeval = range(grid))),
+    # 5) Generamos el ggplot para cada variable
+    plot = pmap(
+      list(mat, phases, variable),
+      function(mat_i, phase_i, var_name) {
+        # 5.1) pasamos a formato largo
+        df_long <- as.data.frame(mat_i) %>%
+          mutate(curve = row_number(), phase = phase_i) %>%
+          pivot_longer(
+            cols      = -c(curve, phase),
+            names_to  = "time_idx",
+            values_to = "value"
+          ) %>%
+          mutate(
+            time = grid[as.integer(gsub("V", "", time_idx))]
+          )
+        # 5.2) construimos el gráfico
+        ggplot(df_long, aes(x = time, y = value, group = curve, color = phase)) +
+          geom_line() +
+          facet_wrap(~ phase, nrow = 1) +
+          scale_color_manual(values = cols) +
+          labs(
+            title = paste("Curvas –", var_name),
+            x     = "Tiempo normalizado",
+            y     = "Valor"
+          ) +
+          theme_minimal()
+      }
+    ))
+
+df_results$plot[[4]]
+
+
+# li passem el fanova.onefactor 
+
+df_results_fanova <- df_results %>% 
+  mutate("fanova" = map2(fd, phases, ~ fanova.onefactor(
+    object = ..1,
+    group  = ..2,
+    nboot  = 200,
+    plot   = FALSE
+  )))
+
+df_results_fanova <- df_results_fanova %>%
+  mutate(pvalor = map_dbl(fanova, ~ ..1$pvalue))
+  
+df_results_fanova$plot[[8]]
+
+
+# 5.1) Test global permutacional  
+fa_X <- fanova.onefactor(
+  object = fd_X,
+  group  = grp_X,
+  plot   = TRU
+)
+
+# 5.2) Extraer estadístico y p-valor
+fa_X$stat    # estadístico global
+fa_X$pvalue # p-valor
+
+
+#################################################
+
+# CARLOS EXPLICADOOOOOO FDA!!!
+
+# ------------------------------------------------------------
+# 0) Cargar librerías
+# ------------------------------------------------------------
+library(dplyr)      # manipulación de datos
+library(tidyr)      # reshape de data.frames
+library(purrr)      # programación funcional (map, pmap…)
+library(ggplot2)    # gráficos
+library(fda.usc)    # análisis funcional de datos
+library(zoo)        # na.approx()
+
+# ------------------------------------------------------------
+# 1) Parámetros globales
+# ------------------------------------------------------------
+# Malla temporal normalizada
+grid <- seq(0, 1, length.out = 100)
+
+# Colores para las fases
+phase_cols <- c("antes" = "blue",
+                "durante" = "red",
+                "después" = "black")
+
+# Número mínimo de curvas por variable y fase
+min_curves_per_phase <- 2
+
+# ------------------------------------------------------------
+# 2) Selección de casos y variables
+# ------------------------------------------------------------
+# Un tibble con cada combinación única (variable, id)
+nomas <- desc_indiv_clean_analis %>%
+  distinct(variable, id)
+
+# Contamos cuántos IDs tiene cada variable
+nomas_variables <- nomas %>%
+  count(variable)
+
+# Filtramos variables con >= 3 IDs distintos
+bones_val <- nomas_variables %>%
+  filter(n > 2) %>%
+  pull(variable)
+
+# Filtramos el dataset original (ejemplo concreto)
+# — sólo algunas variables de interés
+# — excluimos el id_002
+desc_mod <- desc_indiv_clean %>%
+  filter(variable %in% bones_val,
+         id       != "id_002")
+
+# ------------------------------------------------------------
+# 3) Interpolación de curvas sobre la malla común
+# ------------------------------------------------------------
+df_curves <- desc_mod %>%
+  # supongo que `valores` es la columna lista con el vector original
+  mutate(
+    curve = map(valores, ~ approx(
+      x    = seq(0, 1, length.out = length(.x)),
+      y    = .x,
+      xout = grid
+    )$y) %>% 
+      map(~ na.approx(.x, rule = 2))  # rellenar bordes si hay NA
+  )
+
+# ------------------------------------------------------------
+# 4) Función auxiliar: montar objeto FDA y ggplot por variable
+# ------------------------------------------------------------
+process_variable <- function(df_subset, grid, phase_cols) {
+  # df_subset: subset de df_curves para una variable
+  # 1) Matriz (curvas × puntos)
+  mat   <- do.call(rbind, df_subset$curve)
+  
+  # 2) Factor de fase
+  phases <- factor(df_subset$fase, levels = names(phase_cols))
+  
+  # 3) Chequeo de número mínimo de curvas por fase
+  tbl <- table(phases)
+  if (any(tbl < min_curves_per_phase)) {
+    stop(sprintf("Menos de %d curvas en al menos una fase para %s",
+                 min_curves_per_phase,
+                 unique(df_subset$variable)))
+  }
+  
+  # 4) Crear objeto fdata
+  fd_obj <- fdata(mat, argvals = grid, rangeval = range(grid))
+  
+  # 5) Construir ggplot (largo → facets)
+  df_long <- as.data.frame(mat) %>%
+    mutate(curve = row_number(),
+           phase = phases) %>%
+    pivot_longer(
+      cols      = -c(curve, phase),
+      names_to  = "time_idx",
+      values_to = "value"
+    ) %>%
+    mutate(time = grid[as.integer(gsub("V", "", time_idx))])
+  
+  p <- ggplot(df_long, aes(x = time, y = value,
+                           group = curve,
+                           color = phase)) +
+    geom_line() +
+    facet_wrap(~ phase, nrow = 1) +
+    scale_color_manual(values = phase_cols) +
+    labs(
+      title = paste("Curvas –", unique(df_subset$variable)),
+      x     = "Tiempo normalizado",
+      y     = "Valor",
+      color = "Fase"
+    ) +
+    theme_minimal()
+  
+  list(fd   = fd_obj,
+       plot = p)
+}
+
+# ------------------------------------------------------------
+# 5) Aplicar a todas las variables y obtener resultados
+# ------------------------------------------------------------
+df_results <- df_curves %>%
+  group_by(variable) %>%
+  group_map(~ process_variable(.x, grid, phase_cols),
+            .keep = TRUE) %>%
+  # group_map devuelve una lista de listas; reconstruimos un tibble
+  bind_rows(.id = "variable") %>%
+  select(variable, fd, plot)
+
+# Ejemplo: visualizar el plot de la 1ª variable
+print(df_results$plot[[1]])
+
+# ------------------------------------------------------------
+# 6) ANOVA funcional por variable
+# ------------------------------------------------------------
+df_results_fanova <- df_results %>%
+  mutate(
+    fanova = map2(fd, 
+                  map(df_results$variable, ~ df_curves %>% filter(variable == .x) %>% pull(fase)),
+                  ~ fanova.onefactor(object = ..1,
+                                     group  = factor(..2, levels = names(phase_cols)),
+                                     nboot  = 200,
+                                     plot   = FALSE)),
+    p_value = map_dbl(fanova, ~ .x$pvalue)
+  )
+
+# Mostrar p-valores
+df_results_fanova %>%
+  select(variable, p_value)
+
+
+
 
 
